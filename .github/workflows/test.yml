@@ -1,15 +1,33 @@
-name : Test Workflow
-
+name: Test fleet
 on:
-  push:
-    branches:
-      - main
+  branch:
+    - main:
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
-  working-job:
+  test:
     runs-on: ubuntu-latest
     steps:
-      - name: Echo Message
-        run: echo "GitHub Actions working Successfully ✅!"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::508375325844:role/github-actions-deploy-role
+          aws-region: us-east-1
+      - name: Print Private IPs
+        run: |
+        CMD=$(aws ssm send-command \
+          --targets "Key=tag:App,Values=flask" \
+          --document-name "AWS-RunShellScript" \
+          --parameters '{"commands":[hostname -I]}' \
+          --query "Command.CommandId" \
+          --output text)
 
-      
+  sleep 30
+
+  aws ssm list-command-invocations \
+    --command-id "$CMD" \
+    --details \
+    --query "CommandInvocations[*].{Instance:InstanceId,IP:CommandPlugins[*].Output}" \
+    --output table
