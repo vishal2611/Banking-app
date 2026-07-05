@@ -1,7 +1,7 @@
 name: Application Deployment to AWS EC2
 
 on:
-  workflow_dispatch
+  workflow_call:
     
 
 jobs:
