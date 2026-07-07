@@ -25,11 +25,10 @@ jobs:
           aws-region: us-east-1
 
       - name: Upload files to S3
-        id: upload
         run: |
           aws s3 mb s3://508375325844-devops-scripts --region us-east-1 2>/dev/null || true
-          aws s3 cp init.sql s3://508375325844-devops-scripts/init.sql
           aws s3 cp init.py s3://508375325844-devops-scripts/init.py
+          aws s3 cp init.sql s3://508375325844-devops-scripts/init.sql
           echo "✅ Files uploaded to S3 successfully."
 
       - name: Initialize Database on RDS using EC2
@@ -40,10 +39,12 @@ jobs:
             --document-name "AWS-RunShellScript" \
             --parameters '{
               "commands": [
-                "aws s3 cp s3://508375325844-devops-scripts/init.sql /tmp/init.sql",
-                "aws s3 cp s3://508375325844-devops-scripts/init.py /tmp/init.py",
-                "python3 /tmp/init.py || exit 1",
-                "rm /tmp/init.sql /tmp/init.py"
+                "aws s3 cp s3://508375325844-devops-scripts/init.py /home/ubuntu/init.py --region us-east-1",
+                "aws s3 cp s3://508375325844-devops-scripts/init.sql /home/ubuntu/init.sql --region us-east-1",
+                "ls -l /home/ubuntu/init.py /home/ubuntu/init.sql",
+                "python3 -m pip install pymysql boto3 -q",
+                "python3 /home/ubuntu/init.py || exit 1",
+                "rm -f /home/ubuntu/init.py /home/ubuntu/init.sql"
               ]
             }' \
             --query "Command.CommandId" \
@@ -51,6 +52,7 @@ jobs:
             --region us-east-1)
 
           echo "cmd_id=$CMD_ID" >> "$GITHUB_OUTPUT"
+
       - name: Show Results
         run: |
           sleep 20
@@ -59,8 +61,8 @@ jobs:
             --command-id "${{ steps.init-db.outputs.cmd_id }}" \
             --details \
             --region us-east-1 \
-            --query "CommandInvocations[*].{Instance:InstanceId,Status:Status,IP:CommandPlugins[0].Output}" \
-            --output text
+            --query "CommandInvocations[*].{Instance:InstanceId,Status:Status,Output:CommandPlugins[0].Output}" \
+            --output table
 
           FAILED=$(aws ssm list-command-invocations \
             --command-id "${{ steps.init-db.outputs.cmd_id }}" \
@@ -68,3 +70,10 @@ jobs:
             --query "length(CommandInvocations[?Status=='Failed'])" \
             --output text \
             --region us-east-1)
+
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::Database initialization failed on $FAILED instance(s)."
+            exit 1
+          fi
+
+          echo "✅ Database initialized successfully."
